@@ -20,3 +20,4 @@
 		}
 	}
 }
+[![PSScriptAnalyzer](https://github.com/gilbertalgordo/vscode/actions/workflows/powershell.yml/badge.svg)](https://github.com/gilbertalgordo/vscode/actions/workflows/powershell.yml)
