@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ILocalExtension, IGalleryExtension, InstallOptions, InstallVSIXOptions, UninstallOptions, Metadata, DidUninstallExtensionEvent, InstallExtensionEvent, InstallExtensionResult, UninstallExtensionEvent } from 'vs/platform/extensionManagement/common/extensionManagement';
+import { ILocalExtension, IGalleryExtension, InstallOptions, UninstallOptions, Metadata, DidUninstallExtensionEvent, InstallExtensionEvent, InstallExtensionResult, UninstallExtensionEvent, InstallExtensionInfo, IProductVersion } from 'vs/platform/extensionManagement/common/extensionManagement';
 import { URI } from 'vs/base/common/uri';
 import { ExtensionIdentifier, ExtensionType, IExtensionIdentifier } from 'vs/platform/extensions/common/extensions';
 import { ExtensionManagementChannelClient as BaseExtensionManagementChannelClient, ExtensionEventResult } from 'vs/platform/extensionManagement/common/extensionManagementIpc';
@@ -25,7 +25,11 @@ export abstract class ProfileAwareExtensionManagementChannelClient extends BaseE
 		protected readonly uriIdentityService: IUriIdentityService,
 	) {
 		super(channel);
-		this._register(userDataProfileService.onDidChangeCurrentProfile(e => e.join(this.whenProfileChanged(e))));
+		this._register(userDataProfileService.onDidChangeCurrentProfile(e => {
+			if (!this.uriIdentityService.extUri.isEqual(e.previous.extensionsResource, e.profile.extensionsResource)) {
+				e.join(this.whenProfileChanged(e));
+			}
+		}));
 	}
 
 	protected override fireEvent(event: Emitter<InstallExtensionEvent>, data: InstallExtensionEvent): Promise<void>;
@@ -58,7 +62,7 @@ export abstract class ProfileAwareExtensionManagementChannelClient extends BaseE
 		}
 	}
 
-	override async install(vsix: URI, installOptions?: InstallVSIXOptions): Promise<ILocalExtension> {
+	override async install(vsix: URI, installOptions?: InstallOptions): Promise<ILocalExtension> {
 		installOptions = { ...installOptions, profileLocation: await this.getProfileLocation(installOptions?.profileLocation) };
 		return super.install(vsix, installOptions);
 	}
@@ -72,17 +76,33 @@ export abstract class ProfileAwareExtensionManagementChannelClient extends BaseE
 		return super.installFromGallery(extension, installOptions);
 	}
 
+	override async installGalleryExtensions(extensions: InstallExtensionInfo[]): Promise<InstallExtensionResult[]> {
+		const infos: InstallExtensionInfo[] = [];
+		for (const extension of extensions) {
+			infos.push({ ...extension, options: { ...extension.options, profileLocation: await this.getProfileLocation(extension.options?.profileLocation) } });
+		}
+		return super.installGalleryExtensions(infos);
+	}
+
 	override async uninstall(extension: ILocalExtension, options?: UninstallOptions): Promise<void> {
 		options = { ...options, profileLocation: await this.getProfileLocation(options?.profileLocation) };
 		return super.uninstall(extension, options);
 	}
 
-	override async getInstalled(type: ExtensionType | null = null, extensionsProfileResource?: URI): Promise<ILocalExtension[]> {
-		return super.getInstalled(type, await this.getProfileLocation(extensionsProfileResource));
+	override async getInstalled(type: ExtensionType | null = null, extensionsProfileResource?: URI, productVersion?: IProductVersion): Promise<ILocalExtension[]> {
+		return super.getInstalled(type, await this.getProfileLocation(extensionsProfileResource), productVersion);
 	}
 
 	override async updateMetadata(local: ILocalExtension, metadata: Partial<Metadata>, extensionsProfileResource?: URI): Promise<ILocalExtension> {
 		return super.updateMetadata(local, metadata, await this.getProfileLocation(extensionsProfileResource));
+	}
+
+	override async toggleAppliationScope(local: ILocalExtension, fromProfileLocation: URI): Promise<ILocalExtension> {
+		return super.toggleAppliationScope(local, await this.getProfileLocation(fromProfileLocation));
+	}
+
+	override async copyExtensions(fromProfileLocation: URI, toProfileLocation: URI): Promise<void> {
+		return super.copyExtensions(await this.getProfileLocation(fromProfileLocation), await this.getProfileLocation(toProfileLocation));
 	}
 
 	private async whenProfileChanged(e: DidChangeUserDataProfileEvent): Promise<void> {
