@@ -18,25 +18,16 @@ set -e
 # Provides a way to skip the server requirements check from
 # outside the install flow. A system process can create this
 # file before the server is downloaded and installed.
-#
-# This check is duplicated between code-server-linux.sh and here
-# since remote container calls into this script directly quite early
-# before the usual server startup flow.
 if [ -f "/tmp/vscode-skip-server-requirements-check" ]; then
 	echo "!!! WARNING: Skipping server pre-requisite check !!!"
 	echo "!!! Server stability is not guaranteed. Proceed at your own risk. !!!"
 	exit 0
 fi
 
-# Default to legacy server if the following file is present.
-if [ -f "$HOME/@@SERVER_APPLICATION_NAME@@-use-legacy" ]; then
-    echo "!!! WARNING: Using legacy server due to the presence of $HOME/@@SERVER_APPLICATION_NAME@@-use-legacy !!!"
-    exit 100
-fi
-
 ARCH=$(uname -m)
 found_required_glibc=0
 found_required_glibcxx=0
+MIN_GLIBCXX_VERSION="3.4.25"
 
 # Extract the ID value from /etc/os-release
 if [ -f /etc/os-release ]; then
@@ -50,7 +41,10 @@ fi
 # Based on https://github.com/bminor/glibc/blob/520b1df08de68a3de328b65a25b86300a7ddf512/elf/cache.c#L162-L245
 case $ARCH in
 	x86_64) LDCONFIG_ARCH="x86-64";;
-	armv7l | armv8l) LDCONFIG_ARCH="hard-float";;
+	armv7l | armv8l)
+        MIN_GLIBCXX_VERSION="3.4.26"
+        LDCONFIG_ARCH="hard-float"
+        ;;
 	arm64 | aarch64)
         BITNESS=$(getconf LONG_BIT)
 		if [ "$BITNESS" = "32" ]; then
@@ -91,7 +85,7 @@ if [ "$OS_ID" != "alpine" ]; then
         libstdcpp_real_path=$(readlink -f "$libstdcpp_path_line")
         libstdcpp_version=$(grep -ao 'GLIBCXX_[0-9]*\.[0-9]*\.[0-9]*' "$libstdcpp_real_path" | sort -V | tail -1)
         libstdcpp_version_number=$(echo "$libstdcpp_version" | sed 's/GLIBCXX_//')
-        if [ "$(printf '%s\n' "3.4.24" "$libstdcpp_version_number" | sort -V | head -n1)" = "3.4.24" ]; then
+        if [ "$(printf '%s\n' "$MIN_GLIBCXX_VERSION" "$libstdcpp_version_number" | sort -V | head -n1)" = "$MIN_GLIBCXX_VERSION" ]; then
             found_required_glibcxx=1
             break
         fi
@@ -102,7 +96,7 @@ else
     found_required_glibcxx=1
 fi
 if [ "$found_required_glibcxx" = "0" ]; then
-    echo "Warning: Missing GLIBCXX >= 3.4.25! from $libstdcpp_real_path"
+    echo "Warning: Missing GLIBCXX >= $MIN_GLIBCXX_VERSION! from $libstdcpp_real_path"
 fi
 
 if [ "$OS_ID" = "alpine" ]; then
@@ -131,6 +125,9 @@ elif [ -z "$(ldd --version 2>&1 | grep 'musl libc')" ]; then
     elif [ -f /usr/lib/libc.so.6 ]; then
         # Typical path
         libc_path='/usr/lib/libc.so.6'
+    elif [ -f /lib64/libc.so.6 ]; then
+        # Typical path (OpenSUSE)
+        libc_path='/lib64/libc.so.6'
     elif [ -f /usr/lib64/libc.so.6 ]; then
         # Typical path
         libc_path='/usr/lib64/libc.so.6'

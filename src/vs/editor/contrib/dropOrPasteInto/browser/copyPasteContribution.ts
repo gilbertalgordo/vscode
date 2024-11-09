@@ -3,17 +3,20 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { HierarchicalKind } from 'vs/base/common/hierarchicalKind';
-import { IJSONSchema, SchemaToType } from 'vs/base/common/jsonSchema';
-import { KeyCode, KeyMod } from 'vs/base/common/keyCodes';
-import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
-import { EditorAction, EditorCommand, EditorContributionInstantiation, ServicesAccessor, registerEditorAction, registerEditorCommand, registerEditorContribution } from 'vs/editor/browser/editorExtensions';
-import { EditorContextKeys } from 'vs/editor/common/editorContextKeys';
-import { registerEditorFeature } from 'vs/editor/common/editorFeatures';
-import { CopyPasteController, changePasteTypeCommandId, pasteWidgetVisibleCtx } from 'vs/editor/contrib/dropOrPasteInto/browser/copyPasteController';
-import { DefaultPasteProvidersFeature, DefaultTextPasteOrDropEditProvider } from 'vs/editor/contrib/dropOrPasteInto/browser/defaultProviders';
-import * as nls from 'vs/nls';
-import { KeybindingWeight } from 'vs/platform/keybinding/common/keybindingsRegistry';
+import { HierarchicalKind } from '../../../../base/common/hierarchicalKind.js';
+import { IJSONSchema, SchemaToType } from '../../../../base/common/jsonSchema.js';
+import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
+import * as nls from '../../../../nls.js';
+import { Extensions as ConfigurationExtensions, ConfigurationScope, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
+import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
+import { ICodeEditor } from '../../../browser/editorBrowser.js';
+import { EditorAction, EditorCommand, EditorContributionInstantiation, ServicesAccessor, registerEditorAction, registerEditorCommand, registerEditorContribution } from '../../../browser/editorExtensions.js';
+import { editorConfigurationBaseNode } from '../../../common/config/editorConfigurationSchema.js';
+import { EditorContextKeys } from '../../../common/editorContextKeys.js';
+import { registerEditorFeature } from '../../../common/editorFeatures.js';
+import { CopyPasteController, changePasteTypeCommandId, pasteWidgetVisibleCtx, pasteAsPreferenceConfig } from './copyPasteController.js';
+import { DefaultPasteProvidersFeature, DefaultTextPasteOrDropEditProvider } from './defaultProviders.js';
 
 registerEditorContribution(CopyPasteController.ID, CopyPasteController, EditorContributionInstantiation.Eager); // eager because it listens to events on the container dom node of the editor
 registerEditorFeature(DefaultPasteProvidersFeature);
@@ -67,8 +70,7 @@ registerEditorAction(class PasteAsAction extends EditorAction {
 	constructor() {
 		super({
 			id: 'editor.action.pasteAs',
-			label: nls.localize('pasteAs', "Paste As..."),
-			alias: 'Paste As...',
+			label: nls.localize2('pasteAs', "Paste As..."),
 			precondition: EditorContextKeys.writable,
 			metadata: {
 				description: 'Paste as',
@@ -95,13 +97,30 @@ registerEditorAction(class extends EditorAction {
 	constructor() {
 		super({
 			id: 'editor.action.pasteAsText',
-			label: nls.localize('pasteAsText', "Paste as Text"),
-			alias: 'Paste as Text',
+			label: nls.localize2('pasteAsText', "Paste as Text"),
 			precondition: EditorContextKeys.writable,
 		});
 	}
 
 	public override run(_accessor: ServicesAccessor, editor: ICodeEditor) {
 		return CopyPasteController.get(editor)?.pasteAs({ providerId: DefaultTextPasteOrDropEditProvider.id });
+	}
+});
+
+export type PreferredPasteConfiguration = string;
+
+Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerConfiguration({
+	...editorConfigurationBaseNode,
+	properties: {
+		[pasteAsPreferenceConfig]: {
+			type: 'array',
+			scope: ConfigurationScope.LANGUAGE_OVERRIDABLE,
+			description: nls.localize('preferredDescription', "Configures the preferred type of edit to use when pasting content.\n\nThis is an ordered list of edit kinds. The first available edit of a preferred kind will be used."),
+			default: [],
+			items: {
+				type: 'string',
+				description: nls.localize('kind', "The kind identifier of the paste edit."),
+			}
+		},
 	}
 });
